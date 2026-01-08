@@ -1,6 +1,6 @@
 {
   "name": "true-binary-sort",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "Sorts the bits of anything. Truly. Pointlessly.",
   "main": "./dist/true-binary-sort.cjs.js",
   "module": "./dist/true-binary-sort.es.js",
