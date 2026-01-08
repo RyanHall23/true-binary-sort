@@ -51,6 +51,10 @@ console.log(output);
 TrueBinarySort(input, { returnOriginal: true })
 ```
 
+Note: When sorting collections, bit counts are computed from the original values (not from any transformed/bit-string form), so `returnOriginal: true` returns the actual input values reordered.
+
+Binary inputs (Buffer, ArrayBuffer, TypedArrays) are treated as binary primitives and will be represented as bit-strings. Numbers are converted by flooring to 64-bit unsigned integers before bit-counting. Circular references are detected and serialized as `"[Circular]"` during conversion.
+
 ---
 
 ## Detailed Examples

@@ -1,40 +1,63 @@
 // src/index.js
 
-function toBuffer(value) {
-  try {
-    // Handle already-binary data
-    if (Buffer.isBuffer(value)) return value;
-    if (ArrayBuffer.isView(value)) return Buffer.from(value.buffer);
-    if (value instanceof ArrayBuffer) return Buffer.from(value);
+function toUint8Array(value) {
+  // Convert a wide range of JS values into a Uint8Array representation.
+  // This avoids Node Buffer usage so the library works in browsers without polyfills.
 
-    // Special numeric optimization
-    if (typeof value === 'number' && Number.isFinite(value) && !Number.isNaN(value)) {
-      const b = Buffer.alloc(8);
-      b.writeBigUInt64BE(BigInt(Math.floor(value)));
-      return b;
-    }
-
-    // Boolean optimization
-    if (typeof value === 'boolean') {
-      return Buffer.from([value ? 1 : 0]);
-    }
-
-    // Universal approach: try stringification with circular reference handling
-    const seen = new WeakSet();
-    const stringified = JSON.stringify(value, (key, val) => {
-      // Handle circular references
-      if (typeof val === 'object' && val !== null) {
-        if (seen.has(val)) return '[Circular]';
-        seen.add(val);
-      }
-      return val;
-    });
-
-    return Buffer.from(stringified, 'utf8');
-  } catch {
-    // Final fallback: convert to string with type info
-    return Buffer.from(`[${value?.constructor?.name || typeof value}]${String(value).slice(0, 100)}`, 'utf8');
+  // Numbers (store as 64-bit big-endian integer of the floored value)
+  if (typeof value === 'number' && Number.isFinite(value) && !Number.isNaN(value)) {
+    const arr = new Uint8Array(8);
+    const view = new DataView(arr.buffer);
+    view.setBigUint64(0, BigInt(Math.floor(value)), false); // big-endian
+    return arr;
   }
+
+  // BigInt (64-bit BE)
+  if (typeof value === 'bigint') {
+    const arr = new Uint8Array(8);
+    const view = new DataView(arr.buffer);
+    view.setBigUint64(0, value, false);
+    return arr;
+  }
+
+  // Boolean
+  if (typeof value === 'boolean') {
+    return new Uint8Array([value ? 1 : 0]);
+  }
+
+  // Null / undefined
+  if (value === null || typeof value === 'undefined') {
+    return new Uint8Array([0]);
+  }
+
+  // ArrayBuffer / TypedArray / Node Buffer (Buffer is subclass of Uint8Array)
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+
+  // Strings -> UTF-8
+  if (typeof value === 'string') {
+    return new TextEncoder().encode(value);
+  }
+
+  // Objects (safe stringify with circular detection)
+  if (typeof value === 'object') {
+    try {
+      const seen = new WeakSet();
+      const stringified = JSON.stringify(value, (k, v) => {
+        if (typeof v === 'object' && v !== null) {
+          if (seen.has(v)) return '[Circular]';
+          seen.add(v);
+        }
+        return v;
+      });
+      return new TextEncoder().encode(stringified);
+    } catch (e) {
+      return new TextEncoder().encode(String(value));
+    }
+  }
+
+  // Symbols, functions, etc.
+  return new TextEncoder().encode(String(value));
 }
 
 function bitsZerosFirst(buf) {
@@ -59,14 +82,30 @@ function stableSort(items) {
     .sort((a, b) => a.ones - b.ones || a.bits.localeCompare(b.bits) || a.index - b.index);
 }
 
-function TrueBinarySort(value, options = {}) {
+export function TrueBinarySort(value, options = {}, _seen = new WeakSet()) {
   const returnOriginal = options.returnOriginal === true;
+
+  // Detect circular references early and avoid infinite recursion.
+  if (value && typeof value === 'object') {
+    if (_seen.has(value)) {
+      return bitsZerosFirst(toUint8Array('[Circular]')).bits;
+    }
+    _seen.add(value);
+  }
+
+  // Treat binary-like objects (ArrayBuffer, TypedArrays, Node Buffer) as primitives
+  // so they are represented as bit-strings instead of being iterated as objects.
+  if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) {
+    return bitsZerosFirst(toUint8Array(value)).bits;
+  }
 
   // Arrays
   if (Array.isArray(value)) {
     const items = value.map((v) => {
-      const sorted = TrueBinarySort(v, options);
-      const { bits, ones } = bitsZerosFirst(toBuffer(sorted));
+      const sorted = TrueBinarySort(v, options, _seen);
+      // Always compute bits from the original value `v` so that sorting
+      // is based on the source data (not on a possibly transformed `sorted`).
+      const { bits, ones } = bitsZerosFirst(toUint8Array(v));
       return { value: v, sorted, bits, ones };
     });
 
@@ -77,8 +116,9 @@ function TrueBinarySort(value, options = {}) {
   // Maps
   if (value instanceof Map) {
     const items = Array.from(value.entries()).map(([k, v]) => {
-      const sorted = TrueBinarySort(v, options);
-      const { bits, ones } = bitsZerosFirst(toBuffer(sorted));
+      const sorted = TrueBinarySort(v, options, _seen);
+      // Use the original value `v` when calculating bits for stable ordering.
+      const { bits, ones } = bitsZerosFirst(toUint8Array(v));
       return { key: k, value: v, sorted, bits, ones };
     });
 
@@ -89,8 +129,10 @@ function TrueBinarySort(value, options = {}) {
   // Objects
   if (value && typeof value === 'object') {
     const items = Object.entries(value).map(([k, v]) => {
-      const sorted = TrueBinarySort(v, options);
-      const { bits, ones } = bitsZerosFirst(toBuffer(sorted));
+      const sorted = TrueBinarySort(v, options, _seen);
+      // Compute bits from the original property value so returned original
+      // object entries remain the actual original values when requested.
+      const { bits, ones } = bitsZerosFirst(toUint8Array(v));
       return { key: k, value: v, sorted, bits, ones };
     });
 
@@ -99,8 +141,8 @@ function TrueBinarySort(value, options = {}) {
   }
 
   // Primitives
-  return bitsZerosFirst(toBuffer(value)).bits;
+  return bitsZerosFirst(toUint8Array(value)).bits;
 }
 
-module.exports = { TrueBinarySort };
-module.exports.default = TrueBinarySort;
+
+export default TrueBinarySort;
