@@ -163,6 +163,31 @@ describe('TrueBinarySort — stable reordered collections (corrected for actual 
     expect(values).toEqual([2, 1, 5]); // reordered by bit values
   });
 
+  test('returnOriginal preserves top-level types for arrays', () => {
+    const input = [true, 2, 'hi', { x: 1 }, [1, 2]];
+    const result = TrueBinarySort(input, { returnOriginal: true });
+
+    expect(Array.isArray(result)).toBe(true);
+    expect(result.length).toBe(5);
+    expect(result).toEqual(expect.arrayContaining([true, 2, 'hi', { x: 1 }, [1, 2]]));
+  });
+
+  test('returnOriginal preserves top-level values for objects', () => {
+    const input = { a: true, b: 2, c: [1], d: { x: 1 } };
+    const result = TrueBinarySort(input, { returnOriginal: true });
+
+    const values = Object.values(result);
+    expect(values).toEqual(expect.arrayContaining([true, 2, [1], { x: 1 }]));
+  });
+
+  test('returnOriginal preserves top-level values for Maps', () => {
+    const input = new Map([['a', true], ['b', 2], ['c', 's']]);
+    const result = TrueBinarySort(input, { returnOriginal: true });
+
+    const values = Array.from(result.values());
+    expect(values).toEqual(expect.arrayContaining([true, 2, 's']));
+  });
+
   // -------------------------
   // Extended Type Support
   // -------------------------
@@ -189,6 +214,62 @@ describe('TrueBinarySort — stable reordered collections (corrected for actual 
     
     expect(result).toEqual(expect.any(Array));
     result.forEach(r => expect(r).toMatch(/^[01]+$/));
+  });
+
+  test('floats and negative numbers handled without error', () => {
+    const input = [1.9, -2.5, 0];
+    const result = TrueBinarySort(input);
+
+    expect(Array.isArray(result)).toBe(true);
+    expect(result.length).toBe(3);
+    result.forEach(r => expect(typeof r === 'string').toBe(true));
+
+    // returnOriginal should provide the original numeric values
+    const original = TrueBinarySort(input, { returnOriginal: true });
+    expect(original).toEqual(expect.arrayContaining([1.9, -2.5, 0]));
+  });
+
+  test('Buffer and TypedArray inputs handled', () => {
+    const buf = Buffer.from([1,2,3]);
+    const ta = new Uint8Array([4,5,6]);
+    const input = [buf, ta];
+    const result = TrueBinarySort(input);
+
+    expect(Array.isArray(result)).toBe(true);
+    expect(result.length).toBe(2);
+    result.forEach(r => expect(r).toMatch(/^[01]+$/));
+  });
+
+  test('Map with returnOriginal preserves keys and original values', () => {
+    const input = new Map([['a', 5], ['b', 2], ['c', 1]]);
+    const result = TrueBinarySort(input, { returnOriginal: true });
+
+    // keys should remain the original Map keys (though reordered)
+    const entries = Array.from(result.entries());
+    entries.forEach(([k, v]) => {
+      expect(typeof k).toBe('string');
+      // values should be original raw values (numbers)
+      expect(typeof v).toBe('number');
+    });
+  });
+
+  test('very large BigInt values handled without throwing', () => {
+    const big1 = 2n ** 80n; // very large BigInt
+    const big2 = -(2n ** 65n);
+    const input = [big1, big2, 5n];
+    const result = TrueBinarySort(input);
+
+    expect(Array.isArray(result)).toBe(true);
+    expect(result.length).toBe(3);
+  });
+
+  test('deep circular references do not throw', () => {
+    const a = { val: 1 };
+    const b = { val: 2, child: a };
+    a.child = b; // circular
+
+    const input = [a, b];
+    expect(() => TrueBinarySort(input)).not.toThrow();
   });
 
   test('Symbol values converted to string representation', () => {
