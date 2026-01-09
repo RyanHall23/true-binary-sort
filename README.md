@@ -2,7 +2,7 @@
 
 > Sorts the bits of anything. Truly. Pointlessly.
 
-**TrueBinarySort** converts any input into binary, sorts all bits so that `0`s come first, and returns the result as a string. Collections (arrays, objects, Maps) are reordered based on their bit data.
+**TrueBinarySort** converts any input into binary, sorts all bits so that `0`s come first, and returns the result as a Base64 string. Collections (arrays, objects, Maps) are reordered based on their bit data.
 
 It is:
 - Deterministic
@@ -31,7 +31,7 @@ npm install true-binary-sort
 
 ## Usage
 
-### Basic Usage - Return Bit Strings
+### Basic Usage - Return Base64
 
 ```javascript
 import TrueBinarySort from 'true-binary-sort';
@@ -39,21 +39,77 @@ import TrueBinarySort from 'true-binary-sort';
 const input = [0, 1, 2, 5];
 const output = TrueBinarySort(input);
 console.log(output);
+// ["...base64...", "...base64...", "...base64...", "...base64..."]
+// Sorted by bit count: 0 (0 ones), 1 (1 one), 2 (1 one), 5 (2 ones)
+```
+
+### Return Binary Bits
+
+```javascript
+const input = [0, 1, 2, 5];
+const output = TrueBinarySort(input, { outputFormat: 'bits' });
+console.log(output);
 // ["0000...0000", "0000...0001", "0000...0001", "0000...0011"]
 // Sorted by bit count: 0 (0 ones), 1 (1 one), 2 (1 one), 5 (2 ones)
 ```
 
 ### Options
 
-**`returnOriginal`** (boolean) - Return original input values instead of bit strings, reordered by their bit-sort order.
+**`returnOriginal`** (boolean) - Return original input values instead of Base64 strings, reordered by their bit-sort order.
+
+**`outputFormat`** (string) - Output format for sorted bits. Options: `'base64'` (default) or `'bits'` (raw binary string: 0s then 1s).
 
 ```javascript
 TrueBinarySort(input, { returnOriginal: true })
+TrueBinarySort(input, { outputFormat: 'bits' })
+TrueBinarySort(input, { returnOriginal: true, outputFormat: 'bits' }) // returnOriginal takes precedence
 ```
 
-Note: When sorting collections, bit counts are computed from the original values (not from any transformed/bit-string form), so `returnOriginal: true` returns the actual input values reordered.
+**Important Notes:**
 
-Binary inputs (Buffer, ArrayBuffer, TypedArrays) are treated as binary primitives and will be represented as bit-strings. Numbers are converted by flooring to 64-bit unsigned integers before bit-counting. Circular references are detected and serialized as `"[Circular]"` during conversion.
+- When `returnOriginal: true`, returns the actual input values reordered by their bit-sort order (bit counts are computed from original values before any transformation).
+- When `returnOriginal: false`, returns either Base64 strings (default) or raw bit strings, depending on `outputFormat`.
+- **Information Loss with Base64/Bits Output**: The sorted bit representation (Base64 or raw bits) only preserves the *count* of zeros and ones, not the original bit pattern. **Different values can produce identical Base64/bits output** if they have the same bit counts. For example, `1`, `2`, `256`, etc., all have 63 zeros and 1 one in their 64-bit representation, so they all produce the same output when using `returnOriginal: false`.
+  - **Use `returnOriginal: true`** if you need to recover the original values
+  - **Use Base64/bits output** only for analysis or research where bit-count ordering is the primary interest
+
+Binary inputs (Buffer, ArrayBuffer, TypedArrays) are treated as binary primitives and will be represented as Base64 strings or bits. Numbers are converted by flooring to 64-bit unsigned integers before bit-counting. Circular references are detected and serialized as `"[Circular]"` during conversion.
+
+---
+
+## Understanding Base64/Bits Output Collisions
+
+When using the default `returnOriginal: false` with `outputFormat: 'base64'` or `'bits'`, the output only encodes the **count of zeros and ones**, not the original bit pattern. This means multiple different values can produce **identical output**.
+
+### Example: Collision
+
+```javascript
+const input = [0, 1, 2, 256];
+
+// Bit counts (64-bit representation):
+// 0   → 64 zeros, 0 ones  → sorted: "0000...0000"
+// 1   → 63 zeros, 1 one   → sorted: "0000...0001"
+// 2   → 63 zeros, 1 one   → sorted: "0000...0001"  ← SAME as 1!
+// 256 → 63 zeros, 1 one   → sorted: "0000...0001"  ← SAME as 1 and 2!
+
+const output = TrueBinarySort(input, { outputFormat: 'bits' });
+// Result: ["0000...0000", "0000...0001", "0000...0001", "0000...0001"]
+// You've lost the information about which value is which!
+
+// Solution: Use returnOriginal: true to preserve original values
+const sortedWithOriginals = TrueBinarySort(input, { returnOriginal: true });
+// Result: [0, 1, 2, 256]
+// Original values maintained in bit-sorted order
+```
+
+### When to Use Each Option
+
+| Use Case | Option | Benefit |
+|----------|--------|---------|
+| **Research/Analysis**: Study bit-count distribution | `outputFormat: 'bits'` or `'base64'` | Raw bit data, compact representation |
+| **Preserve Original Values**: Sort objects/arrays but keep originals | `returnOriginal: true` | No information loss, original values recovered |
+| **Interop/Transmission**: Compact representation for research purposes | `outputFormat: 'base64'` | Compact, Base64-encoded, suitable for storage/transmission |
+| **Binary Analysis**: Raw bit strings for detailed bit study | `outputFormat: 'bits'` | Human-readable 0s and 1s |
 
 ---
 
@@ -71,9 +127,9 @@ import TrueBinarySort from 'true-binary-sort';
 
 const input = [3, 1, 7];
 
-// Get bit-sorted strings
-const bitStrings = TrueBinarySort(input);
-// Result: ["0000...0001", "0000...0011", "0000...0111"]
+// Get Base64 strings (sorted by underlying bit counts)
+const base64Strings = TrueBinarySort(input);
+// Result: ["...base64...", "...base64...", "...base64..."]
 // Ordered by ones count: 1 < 2 < 3
 
 // Get original values in bit-sorted order
@@ -120,13 +176,19 @@ const sorted = TrueBinarySort(mixed, { returnOriginal: true });
 
 ## How It Works
 
-1. **Convert** - Each input is converted to a Buffer (numbers as 64-bit, strings as UTF-8, etc.)
-2. **Count Bits** - All bits are counted; returns "0" * zeros + "1" * ones
-3. **Sort** - Collections are sorted by:
+1. **Convert** - Each input is converted to a Uint8Array (numbers as 64-bit, strings as UTF-8, etc.)
+2. **Count Bits** - Count the number of zeros and ones in the binary representation
+3. **Reorder** - Create a sorted bit string by placing all zeros first, then all ones
+4. **Format Output** - Encode as Base64 (default), raw bits, or return original values reordered
+5. **Sort Collections** - Collections are sorted by:
    - Primary: count of `1` bits (ascending)
    - Secondary: bit string comparison (lexicographic)
    - Tertiary: original order (stable sort)
-4. **Return** - Either bit strings or original values in sorted order
+6. **Return** - Either Base64/bits strings (lossy, bit-count only) or original values in sorted order (lossless)
+
+### Important: Information Loss
+
+The Base64 or bits output formats only encode the **count** of zeros and ones, not the original bit pattern. Different values with the same bit counts will produce identical output. Use `returnOriginal: true` if you need to recover the original values.
 
 ## License
 
