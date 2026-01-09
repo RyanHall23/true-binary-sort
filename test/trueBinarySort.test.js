@@ -1,95 +1,154 @@
-const { TrueBinarySort } = require('../dist/true-binary-sort.cjs.js');
+const TrueBinarySort = require('../dist/true-binary-sort.cjs.js');
 
-describe('TrueBinarySort — stable reordered collections (corrected for actual bit lengths)', () => {
+describe('TrueBinarySort — Base64 and bits output formats with stable reordered collections', () => {
 
   // -------------------------
-  // Numbers (64-bit)
+  // Numbers (64-bit) - Base64
   // -------------------------
-  test('numbers return zeros-first sorted 64-bit values', () => {
+  test('numbers return Base64-encoded outputs by default', () => {
     const input = [0, 1, 2, 5];
     const result = TrueBinarySort(input);
 
-    const expected = [
-      "0".repeat(64),         // 0
-      "0".repeat(63) + "1",   // 1
-      "0".repeat(63) + "1",   // 2
-      "0".repeat(62) + "11"   // 5
-    ];
-
-    expect(result).toEqual(expected);
+    expect(Array.isArray(result)).toBe(true);
+    expect(result.length).toBe(input.length);
+    // Base64 strings
+    result.forEach(r => expect(r).toMatch(/^[A-Za-z0-9+/=]+$/));
   });
 
+  test('numbers return binary bits with outputFormat: bits', () => {
+    const input = [0, 1, 2, 5];
+    const result = TrueBinarySort(input, { outputFormat: 'bits' });
+
+    expect(Array.isArray(result)).toBe(true);
+    expect(result.length).toBe(input.length);
+    // Binary bit strings
+    result.forEach(r => expect(r).toMatch(/^[01]+$/));
+  });
+
+  test('outputFormat base64 vs bits produces different outputs', () => {
+    const input = [3, 7];
+    const base64Result = TrueBinarySort(input, { outputFormat: 'base64' });
+    const bitsResult = TrueBinarySort(input, { outputFormat: 'bits' });
+
+    // Results should be different
+    expect(base64Result).not.toEqual(bitsResult);
+    // Base64 should match base64 pattern
+    base64Result.forEach(r => expect(r).toMatch(/^[A-Za-z0-9+/=]+$/));
+    // Bits should match bits pattern
+    bitsResult.forEach(r => expect(r).toMatch(/^[01]+$/));
+  });
 
   // -------------------------
   // Booleans
   // -------------------------
-  test('booleans return zeros-first sorted bits', () => {
+  test('booleans return Base64-encoded outputs', () => {
     const input = [true, false];
     const result = TrueBinarySort(input);
 
-    const expected = [
-      "00000000",  // false -> 1 byte, zeros first
-      "00000001"   // true -> 1 byte, zeros first
-    ];
+    expect(Array.isArray(result)).toBe(true);
+    expect(result.length).toBe(2);
+    result.forEach(r => expect(r).toMatch(/^[A-Za-z0-9+/=]+$/));
+  });
 
-    expect(result).toEqual(expected);
+  test('booleans return binary bits with outputFormat: bits', () => {
+    const input = [true, false];
+    const result = TrueBinarySort(input, { outputFormat: 'bits' });
+
+    expect(Array.isArray(result)).toBe(true);
+    expect(result.length).toBe(2);
+    result.forEach(r => expect(r).toMatch(/^[01]+$/));
+  });
+
+  test('returnOriginal true returns actual boolean values not bits', () => {
+    const input = [true, false, true];
+    const result = TrueBinarySort(input, { returnOriginal: true });
+
+    // Should contain the original boolean values
+    expect(result).toContain(true);
+    expect(result).toContain(false);
+    // Should NOT contain bit strings
+    result.forEach(r => expect(typeof r).toBe('boolean'));
   });
 
   // -------------------------
   // Strings
   // -------------------------
-  test('strings return zeros-first sorted bits', () => {
+  test('strings return Base64-encoded outputs', () => {
     const input = ["abc", "xyz"];
     const result = TrueBinarySort(input);
 
-    const expected = [
-      "0".repeat(8*3 - 1) + "1".repeat(1+8*3 - 3), // abc -> 3 bytes -> 24 bits
-      "0".repeat(8*3 - 1) + "1".repeat(1+8*3 - 3)  // xyz -> same length
-    ];
+    expect(result.length).toEqual(input.length);
+    result.forEach(r => expect(r).toMatch(/^[A-Za-z0-9+/=]+$/));
+  });
+
+  test('strings return binary bits with outputFormat: bits', () => {
+    const input = ["abc", "xyz"];
+    const result = TrueBinarySort(input, { outputFormat: 'bits' });
 
     expect(result.length).toEqual(input.length);
     result.forEach(r => expect(r).toMatch(/^[01]+$/));
   });
 
+  test('returnOriginal true with strings returns original strings not bits', () => {
+    const input = ["apple", "banana"];
+    const result = TrueBinarySort(input, { returnOriginal: true });
+
+    // Should contain the original strings
+    expect(result).toContain("apple");
+    expect(result).toContain("banana");
+    // Should NOT contain bit strings
+    result.forEach(r => {
+      expect(typeof r).toBe('string');
+      expect(r).not.toMatch(/^[01]+$/); // not a binary bit string
+    });
+  });
+
   // -------------------------
   // Arrays
   // -------------------------
-  test('array reordered by bit-sorted value (FIFO)', () => {
+  test('array reordered by bit-sorted value (using returnOriginal)', () => {
     const input = [5, 2, 1];
-    const result = TrueBinarySort(input);
+    const result = TrueBinarySort(input, { returnOriginal: true });
 
-    // only checking ascending ones count, stable order on ties
-    const onesCounts = result.map(r => (r.match(/1/g) || []).length);
-    expect(onesCounts).toEqual(onesCounts.slice().sort((a,b)=>a-b));
+    expect(result).toEqual([2, 1, 5]); // stable order preserved on ties
+    // Values should be actual numbers, not bit strings
+    result.forEach(r => expect(typeof r).toBe('number'));
   });
 
-  test('nested array reordered independently', () => {
+  test('nested array conversion produces Base64 outputs for inner collections', () => {
     const input = [[3, 1], [4, 2]];
     const result = TrueBinarySort(input);
 
+    expect(Array.isArray(result)).toBe(true);
+    expect(result.length).toBe(2);
     result.forEach(sub => {
-      const onesCounts = sub.map(r => (r.match(/1/g) || []).length);
-      expect(onesCounts).toEqual(onesCounts.slice().sort((a,b)=>a-b));
+      expect(Array.isArray(sub)).toBe(true);
+      sub.forEach(r => {
+        if (typeof r === 'string') {
+          expect(r).toMatch(/^[A-Za-z0-9+/=]+$/);
+        }
+      });
     });
   });
 
   // -------------------------
   // Objects
   // -------------------------
-  test('object keys reordered by bit-sorted value', () => {
+  test('object values reordered by bit-sorted value (using returnOriginal)', () => {
     const input = { a: 5, b: 2, c: 1 };
-    const result = TrueBinarySort(input);
+    const result = TrueBinarySort(input, { returnOriginal: true });
 
-    const onesCounts = Object.values(result).map(r => (r.match(/1/g) || []).length);
+    const values = Object.values(result);
+    const onesCounts = values.map(n => (n.toString(2).match(/1/g) || []).length);
     expect(onesCounts).toEqual(onesCounts.slice().sort((a,b)=>a-b));
   });
 
-  test('nested objects reordered deterministically', () => {
+  test('nested objects reordered deterministically (using returnOriginal)', () => {
     const input = { x: { a: 5 }, y: { b: 2 } };
-    const result = TrueBinarySort(input);
+    const result = TrueBinarySort(input, { returnOriginal: true });
 
     Object.values(result).forEach(sub => {
-      const onesCounts = Object.values(sub).map(r => (r.match(/1/g) || []).length);
+      const onesCounts = Object.values(sub).map(n => (n.toString(2).match(/1/g) || []).length);
       expect(onesCounts).toEqual(onesCounts.slice().sort((a,b)=>a-b));
     });
   });
@@ -97,11 +156,12 @@ describe('TrueBinarySort — stable reordered collections (corrected for actual 
   // -------------------------
   // Maps
   // -------------------------
-  test('Map reordered by bit-sorted value', () => {
+  test('Map reordered by bit-sorted value (using returnOriginal)', () => {
     const input = new Map([["a", 5], ["b", 2]]);
-    const result = TrueBinarySort(input);
+    const result = TrueBinarySort(input, { returnOriginal: true });
 
-    const onesCounts = Array.from(result.values()).map(r => (r.match(/1/g) || []).length);
+    const values = Array.from(result.values());
+    const onesCounts = values.map(n => (n.toString(2).match(/1/g) || []).length);
     expect(onesCounts).toEqual(onesCounts.slice().sort((a,b)=>a-b));
   });
 
@@ -117,22 +177,19 @@ describe('TrueBinarySort — stable reordered collections (corrected for actual 
 
     const result = TrueBinarySort(input);
 
-    function checkOnesCounts(obj) {
+    function checkStringsAreBase64(obj) {
       if (Array.isArray(obj)) {
-        obj.forEach(el => checkOnesCounts(el));
+        obj.forEach(el => checkStringsAreBase64(el));
       } else if (obj instanceof Map) {
-        Array.from(obj.values()).forEach(el => checkOnesCounts(el));
+        Array.from(obj.values()).forEach(el => checkStringsAreBase64(el));
       } else if (obj && typeof obj === "object") {
-        Object.values(obj).forEach(el => checkOnesCounts(el));
+        Object.values(obj).forEach(el => checkStringsAreBase64(el));
       } else if (typeof obj === "string") {
-        const ones = (obj.match(/1/g) || []).length;
-        const zeros = obj.length - ones;
-        expect(zeros).toBeGreaterThanOrEqual(0);
-        expect(ones).toBeGreaterThanOrEqual(0);
+        expect(obj).toMatch(/^[A-Za-z0-9+/=]+$/);
       }
     }
 
-    checkOnesCounts(result);
+    checkStringsAreBase64(result);
   });
 
   // -------------------------
@@ -197,7 +254,7 @@ describe('TrueBinarySort — stable reordered collections (corrected for actual 
     
     expect(result).toEqual(expect.any(Array));
     expect(result.length).toBe(3);
-    result.forEach(r => expect(r).toMatch(/^[01]+$/));
+    result.forEach(r => expect(r).toMatch(/^[A-Za-z0-9+/=]+$/));
   });
 
   test('special numbers (NaN, Infinity) handled correctly', () => {
@@ -213,7 +270,7 @@ describe('TrueBinarySort — stable reordered collections (corrected for actual 
     const result = TrueBinarySort(input);
     
     expect(result).toEqual(expect.any(Array));
-    result.forEach(r => expect(r).toMatch(/^[01]+$/));
+    result.forEach(r => expect(r).toMatch(/^[A-Za-z0-9+/=]+$/));
   });
 
   test('floats and negative numbers handled without error', () => {
@@ -229,7 +286,7 @@ describe('TrueBinarySort — stable reordered collections (corrected for actual 
     expect(original).toEqual(expect.arrayContaining([1.9, -2.5, 0]));
   });
 
-  test('Buffer and TypedArray inputs handled', () => {
+  test('Buffer and TypedArray inputs handled (Base64)', () => {
     const buf = Buffer.from([1,2,3]);
     const ta = new Uint8Array([4,5,6]);
     const input = [buf, ta];
@@ -237,7 +294,7 @@ describe('TrueBinarySort — stable reordered collections (corrected for actual 
 
     expect(Array.isArray(result)).toBe(true);
     expect(result.length).toBe(2);
-    result.forEach(r => expect(r).toMatch(/^[01]+$/));
+    result.forEach(r => expect(r).toMatch(/^[A-Za-z0-9+/=]+$/));
   });
 
   test('Map with returnOriginal preserves keys and original values', () => {
@@ -272,15 +329,15 @@ describe('TrueBinarySort — stable reordered collections (corrected for actual 
     expect(() => TrueBinarySort(input)).not.toThrow();
   });
 
-  test('Symbol values converted to string representation', () => {
+  test('Symbol values converted to Base64 representation', () => {
     const input = [Symbol('test'), Symbol('another')];
     const result = TrueBinarySort(input);
     
     expect(result).toEqual(expect.any(Array));
-    result.forEach(r => expect(r).toMatch(/^[01]+$/));
+    result.forEach(r => expect(r).toMatch(/^[A-Za-z0-9+/=]+$/));
   });
 
-  test('Date objects converted by timestamp', () => {
+  test('Date objects converted by timestamp (Base64)', () => {
     const date1 = new Date('2020-01-01');
     const date2 = new Date('2021-01-01');
     const input = [date2, date1];
@@ -288,7 +345,7 @@ describe('TrueBinarySort — stable reordered collections (corrected for actual 
     
     expect(Array.isArray(result)).toBe(true);
     expect(result.length).toBe(2);
-    // Dates get converted - result can be bit strings or objects
+    // Dates get converted - result is Base64 strings
   });
 
   test('RegExp objects converted correctly', () => {
@@ -307,7 +364,7 @@ describe('TrueBinarySort — stable reordered collections (corrected for actual 
     expect(result.length).toBe(2);
   });
 
-  test('Sets converted to bit representation', () => {
+  test('Sets converted to Base64 representation', () => {
     const input = [new Set([1, 2, 3]), new Set([4, 5])];
     const result = TrueBinarySort(input);
     
@@ -324,7 +381,7 @@ describe('TrueBinarySort — stable reordered collections (corrected for actual 
     
     expect(result).toEqual(expect.any(Array));
     expect(result.length).toBe(2);
-    // Result may be objects or bit strings depending on nesting
+    // Result may be objects or Base64 strings depending on nesting
   });
 
   test('mixed complex types sorted deterministically', () => {

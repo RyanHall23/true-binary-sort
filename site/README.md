@@ -14,3 +14,23 @@ The React Compiler is not enabled on this template because of its impact on dev 
 ## Expanding the ESLint configuration
 
 If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+
+---
+
+## TrueBinarySort Test Bed
+
+This site hosts the interactive test bed for `TrueBinarySort`.
+
+- Output format: Interperatable Base64 (no longer raw bit strings)
+- Toggle `returnOriginal` in code to see original values reordered
+- The UI shows both Base64 output and original values when available
+
+### Run locally
+
+```bash
+cd site
+npm install
+npm run dev
+```
+
+Then open the app and use the left input panel to try custom values; results appear on the right. The footer includes a brief “How It Works” with Base64 notes.

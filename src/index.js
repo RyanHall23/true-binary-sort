@@ -82,13 +82,40 @@ function stableSort(items) {
     .sort((a, b) => a.ones - b.ones || a.bits.localeCompare(b.bits) || a.index - b.index);
 }
 
-export function TrueBinarySort(value, options = {}, _seen = new WeakSet()) {
+function TrueBinarySort(value, options = {}, _seen = new WeakSet()) {
   const returnOriginal = options.returnOriginal === true;
+  const outputFormat = options.outputFormat || 'base64'; // 'base64' | 'bits'
+
+  // Helper: convert a binary string (zeros then ones) to a Uint8Array
+  function binaryStringToUint8Array(binStr) {
+    const arr = new Uint8Array(Math.ceil(binStr.length / 8));
+    for (let i = 0; i < arr.length; i++) {
+      arr[i] = parseInt(binStr.slice(i * 8, i * 8 + 8).padEnd(8, '0'), 2);
+    }
+    return arr;
+  }
+
+  // Helper: convert Uint8Array to Base64
+  function uint8ToBase64(uint8) {
+    if (typeof Buffer !== 'undefined') {
+      // Node.js
+      return Buffer.from(uint8).toString('base64');
+    } else {
+      // Browser
+      let binary = '';
+      for (let i = 0; i < uint8.length; i++) {
+        binary += String.fromCharCode(uint8[i]);
+      }
+      return btoa(binary);
+    }
+  }
 
   // Detect circular references early and avoid infinite recursion.
   if (value && typeof value === 'object') {
     if (_seen.has(value)) {
-      return bitsZerosFirst(toUint8Array('[Circular]')).bits;
+      const bits = bitsZerosFirst(toUint8Array('[Circular]')).bits;
+      if (returnOriginal) return '[Circular]';
+      return outputFormat === 'bits' ? bits : uint8ToBase64(binaryStringToUint8Array(bits));
     }
     _seen.add(value);
   }
@@ -96,52 +123,85 @@ export function TrueBinarySort(value, options = {}, _seen = new WeakSet()) {
   // Treat binary-like objects (ArrayBuffer, TypedArrays, Node Buffer) as primitives
   // so they are represented as bit-strings instead of being iterated as objects.
   if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) {
-    return bitsZerosFirst(toUint8Array(value)).bits;
+    const bits = bitsZerosFirst(toUint8Array(value)).bits;
+    if (returnOriginal) return value;
+    return outputFormat === 'bits' ? bits : uint8ToBase64(binaryStringToUint8Array(bits));
   }
 
   // Arrays
   if (Array.isArray(value)) {
     const items = value.map((v) => {
       const sorted = TrueBinarySort(v, options, _seen);
-      // Always compute bits from the original value `v` so that sorting
-      // is based on the source data (not on a possibly transformed `sorted`).
       const { bits, ones } = bitsZerosFirst(toUint8Array(v));
       return { value: v, sorted, bits, ones };
     });
-
     const sorted = stableSort(items);
-    return sorted.map(i => returnOriginal ? i.value : i.sorted);
+    function toOutputRecursive(val) {
+      if (Array.isArray(val)) {
+        return val.map(toOutputRecursive);
+      }
+      if (val && typeof val === 'object' && !(val instanceof Uint8Array)) {
+        return Object.fromEntries(Object.entries(val).map(([k, v]) => [k, toOutputRecursive(v)]));
+      }
+      if (typeof val === 'string') {
+        return outputFormat === 'bits' ? val : uint8ToBase64(binaryStringToUint8Array(val));
+      }
+      // For primitives, convert to string first
+      const bitStr = String(val);
+      return outputFormat === 'bits' ? bitStr : uint8ToBase64(binaryStringToUint8Array(bitStr));
+    }
+    return sorted.map(i => {
+      if (returnOriginal) return i.value;
+      return toOutputRecursive(i.sorted);
+    });
   }
 
   // Maps
   if (value instanceof Map) {
     const items = Array.from(value.entries()).map(([k, v]) => {
       const sorted = TrueBinarySort(v, options, _seen);
-      // Use the original value `v` when calculating bits for stable ordering.
       const { bits, ones } = bitsZerosFirst(toUint8Array(v));
       return { key: k, value: v, sorted, bits, ones };
     });
-
     const sorted = stableSort(items);
-    return new Map(sorted.map(i => returnOriginal ? [i.key, i.value] : [i.key, i.sorted]));
+    return new Map(sorted.map(i => {
+      if (returnOriginal) return [i.key, i.value];
+      const bitStr = i.sorted;
+      return [i.key, outputFormat === 'bits' ? bitStr : uint8ToBase64(binaryStringToUint8Array(bitStr))];
+    }));
   }
 
   // Objects
-  if (value && typeof value === 'object') {
+  if (value && typeof value === 'object' && !(value instanceof Map)) {
     const items = Object.entries(value).map(([k, v]) => {
       const sorted = TrueBinarySort(v, options, _seen);
-      // Compute bits from the original property value so returned original
-      // object entries remain the actual original values when requested.
       const { bits, ones } = bitsZerosFirst(toUint8Array(v));
       return { key: k, value: v, sorted, bits, ones };
     });
-
     const sorted = stableSort(items);
-    return Object.fromEntries(sorted.map(i => returnOriginal ? [i.key, i.value] : [i.key, i.sorted]));
+    function toOutputObjRecursive(val) {
+      if (Array.isArray(val)) {
+        return val.map(toOutputObjRecursive);
+      }
+      if (val && typeof val === 'object' && !(val instanceof Uint8Array)) {
+        return Object.fromEntries(Object.entries(val).map(([k, v]) => [k, toOutputObjRecursive(v)]));
+      }
+      if (typeof val === 'string') {
+        return outputFormat === 'bits' ? val : uint8ToBase64(binaryStringToUint8Array(val));
+      }
+      const bitStr = String(val);
+      return outputFormat === 'bits' ? bitStr : uint8ToBase64(binaryStringToUint8Array(bitStr));
+    }
+    return Object.fromEntries(sorted.map(i => {
+      if (returnOriginal) return [i.key, i.value];
+      return [i.key, toOutputObjRecursive(i.sorted)];
+    }));
   }
 
   // Primitives
-  return bitsZerosFirst(toUint8Array(value)).bits;
+  const bits = bitsZerosFirst(toUint8Array(value)).bits;
+  if (returnOriginal) return value;
+  return outputFormat === 'bits' ? bits : uint8ToBase64(binaryStringToUint8Array(bits));
 }
 
 
