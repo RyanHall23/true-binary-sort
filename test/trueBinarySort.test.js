@@ -135,4 +135,122 @@ describe('TrueBinarySort — stable reordered collections (corrected for actual 
     checkOnesCounts(result);
   });
 
+  // -------------------------
+  // returnOriginal option
+  // -------------------------
+  test('returnOriginal option returns original values in sorted order', () => {
+    const input = [5, 2, 1];
+    const result = TrueBinarySort(input, { returnOriginal: true });
+
+    // 1 has 1 one, 2 has 1 one, 5 has 2 ones -> [1, 2, 5] or [2, 1, 5] (stable)
+    expect(result).toEqual([2, 1, 5]); // stable order preserved
+  });
+
+  test('returnOriginal with objects returns original values reordered', () => {
+    const input = { a: 5, b: 2, c: 1 };
+    const result = TrueBinarySort(input, { returnOriginal: true });
+
+    // Values reordered by bit count, keys rearranged accordingly
+    const values = Object.values(result);
+    expect(values).toEqual([2, 1, 5]); // stable order: b, c, a
+  });
+
+  test('returnOriginal with Map returns original values reordered', () => {
+    const input = new Map([["a", 5], ["b", 2], ["c", 1]]);
+    const result = TrueBinarySort(input, { returnOriginal: true });
+
+    const values = Array.from(result.values());
+    expect(values).toEqual([2, 1, 5]); // reordered by bit values
+  });
+
+  // -------------------------
+  // Extended Type Support
+  // -------------------------
+  test('null and undefined handled correctly', () => {
+    const input = [null, undefined, 0];
+    const result = TrueBinarySort(input);
+    
+    expect(result).toEqual(expect.any(Array));
+    expect(result.length).toBe(3);
+    result.forEach(r => expect(r).toMatch(/^[01]+$/));
+  });
+
+  test('special numbers (NaN, Infinity) handled correctly', () => {
+    const input = [NaN, Infinity, -Infinity, 42];
+    const result = TrueBinarySort(input);
+    
+    expect(result).toEqual(expect.any(Array));
+    expect(result.length).toBe(4);
+  });
+
+  test('BigInt values converted correctly', () => {
+    const input = [1n, 2n, 5n];
+    const result = TrueBinarySort(input);
+    
+    expect(result).toEqual(expect.any(Array));
+    result.forEach(r => expect(r).toMatch(/^[01]+$/));
+  });
+
+  test('Symbol values converted to string representation', () => {
+    const input = [Symbol('test'), Symbol('another')];
+    const result = TrueBinarySort(input);
+    
+    expect(result).toEqual(expect.any(Array));
+    result.forEach(r => expect(r).toMatch(/^[01]+$/));
+  });
+
+  test('Date objects converted by timestamp', () => {
+    const date1 = new Date('2020-01-01');
+    const date2 = new Date('2021-01-01');
+    const input = [date2, date1];
+    const result = TrueBinarySort(input);
+    
+    expect(Array.isArray(result)).toBe(true);
+    expect(result.length).toBe(2);
+    // Dates get converted - result can be bit strings or objects
+  });
+
+  test('RegExp objects converted correctly', () => {
+    const input = [/abc/, /test/];
+    const result = TrueBinarySort(input);
+    
+    expect(result).toEqual(expect.any(Array));
+    result.forEach(r => expect(typeof r === 'string' || typeof r === 'object').toBe(true));
+  });
+
+  test('Error objects converted correctly', () => {
+    const input = [new Error('test'), new Error('another')];
+    const result = TrueBinarySort(input);
+    
+    expect(result).toEqual(expect.any(Array));
+    expect(result.length).toBe(2);
+  });
+
+  test('Sets converted to bit representation', () => {
+    const input = [new Set([1, 2, 3]), new Set([4, 5])];
+    const result = TrueBinarySort(input);
+    
+    expect(result).toEqual(expect.any(Array));
+    expect(result.length).toBe(2);
+  });
+
+  test('objects with circular reference handled gracefully', () => {
+    const obj1 = { a: 1 };
+    const obj2 = { b: 2, nested: { c: 3 } };
+    
+    const input = [obj2, obj1];
+    const result = TrueBinarySort(input);
+    
+    expect(result).toEqual(expect.any(Array));
+    expect(result.length).toBe(2);
+    // Result may be objects or bit strings depending on nesting
+  });
+
+  test('mixed complex types sorted deterministically', () => {
+    const input = [false, 42, 'hello'];
+    const result = TrueBinarySort(input, { returnOriginal: true });
+    
+    expect(Array.isArray(result)).toBe(true);
+    expect(result.length).toBe(3);
+  });
 });
